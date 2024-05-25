@@ -1,0 +1,87 @@
+}
+<!DOCTYPE html>
+<html>
+<head>
+    <title>BAYROL Web Portal</title>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <meta name="Robots" content="no-index, no-follow">
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+    <link rel="shortcut icon" href="../../favicon.ico">
+    <link rel="stylesheet" type="text/css" media="screen" href="css/bayrol.css?v1.0.1">
+    <link rel="stylesheet" type="text/css" media="screen" href="css/font-awesome.min.css">
+    <script type="text/javascript" src="../js/jquery.2.2.2.min.js"></script>
+    <script type="text/javascript" src="../js/functions.js"></script>
+</head>
+<style>
+    #content_frame > iframe {
+        width: 640px;
+        height: 363px;
+        margin: 0px 0px 0px 130px;
+    }
+    #content_frame {
+        background-color: transparent;
+    }
+    .frame_bar {
+        width: 636px;
+        margin-left: 130px;
+    }
+</style>
+<body>
+<!-- ################## Header ################## -->
+<img class="bg" src="img/bg4.jpg" alt="bg">
+<div id="header">
+    <div class="center">
+        <a id="logo" href="http://www.bayrol.com/" title="Bayrol" ><img src="img/logo.png" width="159" height="36" alt="Bayrol" title="Bayrol"></a>
+        <h2>BAYROL Web Portal</h2>
+        <div id="navi">
+            <a href="plants.php">List of controllers</a><a target="_blank" href="http://www.pm5-update.net/pm5_update_en.html">Download Center</a>		<div id="lang">
+            <a class="" onclick="$.get('../chlang.php',{lang:'de'},function(){location.reload();});">DE</a>|<a class="" onclick="$.get('../chlang.php',{lang:'fr'},function(){location.reload();});">FR</a>|<a class="" onclick="$.get('../chlang.php',{lang:'es'},function(){location.reload();});">ES</a>|<a class="lang_set" onclick="$.get('../chlang.php',{lang:'en'},function(){location.reload();});">EN</a>		</div>
+        </div>
+    </div>
+</div>
+<div class="wrapper">
+
+    <!-- ################## Content ################## -->
+    <div id="content">
+        <div id="content_header"><span>Direct access</span></div>
+        <div class="frame_bar">
+            <label>Controller: </label>
+            <img src="img/cancel.png" onclick="document.location.href='plants.php'"></img>
+        </div>
+        <div id="content_frame">
+            <iframe src="../../app/index.html?code=A-CODE1&direct" name="device" frameborder="0" scrolling="no"></iframe>
+        </div>
+    </div>
+
+    <!-- ################## Footer ################## -->
+</div>
+<div id="footer">
+    <div class="center">
+        <div id="session">
+            <script type="text/javascript">
+                var session_timer = false;
+                var session_length=1716477751000;
+                function session_timer_toggle(){
+                    if(session_timer) {
+                        clearInterval(session_timer);
+                        session_timer = false;
+                    } else {
+                        $.get('../chlang.php',{session_time:'get'},function(data){session_length=data*1000;});
+                        session_timer = window.setInterval("session_timeout(session_length)", 1000);
+                    }
+                }
+            </script>
+            Username<p></p>End of session in: 		<a title="Stop session timer" onclick="session_timer_toggle();" id="timer">00:00</a>
+
+            <p></p><a href="login.php?r=logout">Logout</a>
+            <script type="text/javascript">
+                session_timer = window.setInterval("session_timeout(session_length)", 1000);
+            </script>
+        </div>
+        <div id="copyright">
+            <a href="http://www.bayrol.de/impressum/">Imprint</a><p></p><a href="tou.php">Terms of use</a><p></p>&copy; 2015 BAYROL	</div>
+    </div>
+</div>
+</body>
+</html>

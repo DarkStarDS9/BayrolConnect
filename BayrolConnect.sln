@@ -1,0 +1,28 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BayrolConnect", "BayrolConnect\BayrolConnect.csproj", "{8126C5D1-E5AF-4CEC-AEBF-47D7863B4DEA}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BayrolLib", "BayrolLib\BayrolLib.csproj", "{65438647-4BEA-412D-BCE1-8532C5FB297E}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BayrolLibTests", "BayrolLibTests\BayrolLibTests.csproj", "{C8DD51AD-5D49-46DD-8C60-5188B85DD1BF}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{8126C5D1-E5AF-4CEC-AEBF-47D7863B4DEA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8126C5D1-E5AF-4CEC-AEBF-47D7863B4DEA}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8126C5D1-E5AF-4CEC-AEBF-47D7863B4DEA}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8126C5D1-E5AF-4CEC-AEBF-47D7863B4DEA}.Release|Any CPU.Build.0 = Release|Any CPU
+		{65438647-4BEA-412D-BCE1-8532C5FB297E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{65438647-4BEA-412D-BCE1-8532C5FB297E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{65438647-4BEA-412D-BCE1-8532C5FB297E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{65438647-4BEA-412D-BCE1-8532C5FB297E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C8DD51AD-5D49-46DD-8C60-5188B85DD1BF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C8DD51AD-5D49-46DD-8C60-5188B85DD1BF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C8DD51AD-5D49-46DD-8C60-5188B85DD1BF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C8DD51AD-5D49-46DD-8C60-5188B85DD1BF}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
