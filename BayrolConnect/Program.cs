@@ -6,7 +6,7 @@ namespace BayrolConnect;
 
 public static class Program
 {
-    private static ILogger<BayrolWebConnector> _logger = null!;
+    private static ILogger _logger = null!;
     
     public static async Task Main(string[] args)
     {
@@ -19,9 +19,13 @@ public static class Program
 
         var config = JsonSerializer.Deserialize<Configuration>(configJson) ??
                      throw new InvalidOperationException("Failed to deserialize configuration");
+
+        var loggerBuilder = LoggerFactory.Create(builder => builder.AddConsole()
+            .SetMinimumLevel(config.LogLevel));
         
-        _logger = LoggerFactory.Create(builder => builder.AddConsole()
-            .SetMinimumLevel(config.LogLevel)).CreateLogger<BayrolWebConnector>();
+        _logger = config.UseMqtt
+            ? loggerBuilder.CreateLogger<BayrolMqttConnector>()
+            : loggerBuilder.CreateLogger<BayrolWebConnector>();
 
         await using var azureDevice = new AzureIotCentralDevice(config.IdScope, config.DeviceId, config.PrimaryKey, _logger);
         if(!await azureDevice.Connect()) return;

@@ -9,6 +9,7 @@ namespace BayrolLib;
 /// </summary>
 public static class MqttMapping
 {
+    public const string DeviceStatus = "1";
     public const string PhValue = "4.2";
     public const string RedoxValue = "4.82";
     public const string TemperatureValue = "4.98";
@@ -42,16 +43,15 @@ public static class MqttMapping
             or "19.258";    // canister OK
     }
     
-    /*     
-      case 2: {
-         // Device status offline
-         this.I_Receive( 'd02/22ASE2-12345/v/1', '{"v":"17.0"}' );
-         break;
-       }
-       case 3: {
-         // Device status online
-         this.I_Receive( 'd02/22ASE2-12345/v/1', '{"v":"17.4"}' );
-         break;
-       }
-     */
+    public static DeviceState ToDeviceState(JsonElement element)
+    {
+        var str = element.GetString();
+
+        return str switch
+        {
+            "17.4" => DeviceState.Ok,
+            "17.3" => DeviceState.Warning,
+            _ => DeviceState.Error // offline = 17.0, but this is an error as well
+        };
+    }
 }

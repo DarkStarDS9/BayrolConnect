@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
@@ -39,7 +40,7 @@ public class BayrolWebConnector
         _logger = logger;
         _timeProvider = timeProvider;
 
-        _httpClient = new HttpClient(new HttpClientHandler { UseCookies = true });
+        _httpClient = new HttpClient(new HttpClientHandler { UseCookies = true, AllowAutoRedirect = false});
     }
 
     private void PrintHeaders(HttpResponseMessage response)
@@ -95,10 +96,10 @@ public class BayrolWebConnector
 
         PrintHeaders(response);
 
-        return response.IsSuccessStatusCode;
+        return response.IsSuccessStatusCode || response.StatusCode == HttpStatusCode.Redirect;
     }
     
-    internal async Task<MqttSessionIdResponse> GetMqttSessionIdAsync(string cid)
+    internal async Task<MqttSessionIdResponse?> GetMqttSessionIdAsync(string cid)
     {
         if (!_loginSuccess) await ReconnectAfterFailureAsync();
 
@@ -106,10 +107,8 @@ public class BayrolWebConnector
 
         if (response.StatusCode != System.Net.HttpStatusCode.OK)
         {
-            _loginSuccess = false;
-
-            _logger.LogError($@"{nameof(GetMqttSessionIdAsync)}: returned code is {response.StatusCode}");
-            return default;
+            _logger.LogWarning($@"{nameof(GetMqttSessionIdAsync)}: returned code is {response.StatusCode}");
+            return null;
         }
 
         var code = HtmlParser.GetCode(await response.Content.ReadAsStringAsync());

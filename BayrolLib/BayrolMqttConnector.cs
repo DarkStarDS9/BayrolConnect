@@ -32,7 +32,17 @@ public class BayrolMqttConnector(
 
     public async Task ConnectAsync()
     {
-        _sessionIdResponse = await _webConnector.GetMqttSessionIdAsync(cid);
+        do
+        {
+            _sessionIdResponse = await _webConnector.GetMqttSessionIdAsync(cid);
+            if (_sessionIdResponse == null)
+            {
+                logger.LogWarning("Failed to get session ID, retrying in 5 minutes");
+                await Task.Delay(TimeSpan.FromMinutes(5));
+            }
+            
+        } while (_sessionIdResponse == null);
+
         _prefix =  $"d02/{_sessionIdResponse.DeviceSerial}";
         
         var client = new MqttFactory().CreateMqttClient();
@@ -92,8 +102,12 @@ public class BayrolMqttConnector(
 
         lock (_deviceData)
         {
-            switch (payload.T)
+            switch (arg.ApplicationMessage.Topic.Split('/').Last())
             {
+                case MqttMapping.DeviceStatus:
+                    _deviceData.DeviceState = MqttMapping.ToDeviceState(payload.V);
+                    _deviceData.ErrorMessage = _deviceData.DeviceState == DeviceState.Error ? "Device is offline" : null;
+                    break;
                 case MqttMapping.PhValue:
                     _deviceData.Ph = payload.V.GetInt32() / 10m;
                     break;
@@ -133,8 +147,6 @@ public class BayrolMqttConnector(
             }
 
             _deviceData.ObtainedAt = timeProvider.GetUtcNow();
-            _deviceData.DeviceState = DeviceState.Ok; // TODO: there should be a topic for that
-            _deviceData.ErrorMessage = null;
         }
 
         return Task.CompletedTask;
