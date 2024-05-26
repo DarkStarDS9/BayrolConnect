@@ -1,4 +1,5 @@
 ﻿using System.Text.Json;
+using System.Text.Json.Serialization;
 using BayrolLib;
 using Microsoft.Extensions.Logging;
 
@@ -7,6 +8,7 @@ namespace BayrolConnect;
 public static class Program
 {
     private static ILogger _logger = null!;
+    private static readonly JsonSerializerOptions AzureJsonOptions = new();
     
     public static async Task Main(string[] args)
     {
@@ -29,7 +31,9 @@ public static class Program
 
         await using var azureDevice = new AzureIotCentralDevice(config.IdScope, config.DeviceId, config.PrimaryKey, _logger);
         if(!await azureDevice.Connect()) return;
-        
+
+        AzureJsonOptions.Converters.Add(new JsonStringEnumConverter());
+
         if (config.UseMqtt)
         {
             await ConnectUsingMqtt(config, azureDevice);
@@ -52,7 +56,7 @@ public static class Program
 
                 if (values.DeviceState != DeviceState.Error)
                 {
-                    var messageString = JsonSerializer.Serialize(values);
+                    var messageString = JsonSerializer.Serialize(values, AzureJsonOptions);
                     await azureDevice.SendEventAsync(messageString);
                 }
                 else
@@ -82,7 +86,7 @@ public static class Program
 
                 if (values.DeviceState != DeviceState.Error)
                 {
-                    var messageString = JsonSerializer.Serialize(values);
+                    var messageString = JsonSerializer.Serialize(values, AzureJsonOptions);
                     await azureDevice.SendEventAsync(messageString);
                 }
                 else

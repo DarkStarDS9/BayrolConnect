@@ -14,7 +14,7 @@ public class BayrolWebConnector
     private const string DevicePath = "/device.php?c=";
     private const string GetAccessTokenPath = "/api/?code=";
 
-    private static readonly JsonSerializerOptions JsonOptions;
+    private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
 
     private readonly string _username;
     private readonly string _password;
@@ -24,15 +24,6 @@ public class BayrolWebConnector
 
     private bool _loginSuccess;
     
-    static BayrolWebConnector()
-    {
-        JsonOptions = new JsonSerializerOptions
-        {
-            PropertyNameCaseInsensitive = true
-        };
-        JsonOptions.Converters.Add(new JsonStringEnumConverter());
-    }
-
     public BayrolWebConnector(string username, string password, ILogger logger, TimeProvider timeProvider)
     {
         _username = username;
