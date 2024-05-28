@@ -29,6 +29,7 @@ public class BayrolMqttConnector(
     
     private BayrolWebConnector.MqttSessionIdResponse? _sessionIdResponse;
     private string? _prefix;
+    private readonly HashSet<string> _uninitializedTopics = [];
 
     public async Task ConnectAsync()
     {
@@ -63,7 +64,9 @@ public class BayrolMqttConnector(
 
         foreach (var topic in MqttMapping.AllTopics)
         {
-            var subscribeResult = await client.SubscribeAsync($"{_prefix}/v/{topic}");
+            var fullTopic = $"{_prefix}/v/{topic}";
+            _uninitializedTopics.Add(fullTopic);
+            var subscribeResult = await client.SubscribeAsync(fullTopic);
             var publishResult = await client.PublishStringAsync($"{_prefix}/g/{topic}");
 
             logger.LogInformation($"Subscribed to {subscribeResult.Items.First().TopicFilter.Topic}: {subscribeResult.ReasonString}, data-request-result: {publishResult.ReasonCode}");
@@ -102,6 +105,8 @@ public class BayrolMqttConnector(
 
         lock (_deviceData)
         {
+            _uninitializedTopics.Remove(arg.ApplicationMessage.Topic);
+            
             switch (arg.ApplicationMessage.Topic.Split('/').Last())
             {
                 case MqttMapping.DeviceStatus:
@@ -156,7 +161,13 @@ public class BayrolMqttConnector(
     {
         lock (_deviceData)
         {
-            return _deviceData.Clone();
+            return _uninitializedTopics.Count > 0
+                ? new ExtendedAutomaticSaltDeviceData
+                {
+                    DeviceState = DeviceState.Error,
+                    ErrorMessage = "MQTT retrieving initial values"
+                }
+                : _deviceData.Clone();
         }
     }
 

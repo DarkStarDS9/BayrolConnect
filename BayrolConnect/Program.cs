@@ -22,8 +22,14 @@ public static class Program
         var config = JsonSerializer.Deserialize<Configuration>(configJson) ??
                      throw new InvalidOperationException("Failed to deserialize configuration");
 
-        var loggerBuilder = LoggerFactory.Create(builder => builder.AddConsole()
-            .SetMinimumLevel(config.LogLevel));
+        var loggerBuilder = LoggerFactory.Create(builder =>
+            builder.AddSimpleConsole(options =>
+                {
+                    options.IncludeScopes = true;
+                    options.SingleLine = true;
+                    options.TimestampFormat = "[yyyy-MM-dd HH:mm:ss.fff] ";
+                })
+                .SetMinimumLevel(config.LogLevel));
         
         _logger = config.UseMqtt
             ? loggerBuilder.CreateLogger<BayrolMqttConnector>()

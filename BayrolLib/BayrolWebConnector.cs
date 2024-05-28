@@ -98,6 +98,7 @@ public class BayrolWebConnector
 
         if (response.StatusCode != System.Net.HttpStatusCode.OK)
         {
+            _loginSuccess = false;
             _logger.LogWarning($@"{nameof(GetMqttSessionIdAsync)}: returned code is {response.StatusCode}");
             return null;
         }
