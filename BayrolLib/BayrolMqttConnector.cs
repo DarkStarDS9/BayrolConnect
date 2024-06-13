@@ -22,7 +22,7 @@ public class BayrolMqttConnector(
 
     private readonly ExtendedAutomaticSaltDeviceData _deviceData = new()
     {
-        DeviceState = DeviceState.Error,
+        DeviceState = DeviceState.Offline,
         ErrorMessage = "Not connected to MQTT server yet",
         ObtainedAt = timeProvider.GetUtcNow()
     };
@@ -77,7 +77,7 @@ public class BayrolMqttConnector(
     {
         lock (_deviceData)
         {
-            _deviceData.DeviceState = DeviceState.Error;
+            _deviceData.DeviceState = DeviceState.Offline;
             _deviceData.ErrorMessage = "Disconnected from MQTT server";
             _deviceData.ObtainedAt = timeProvider.GetUtcNow();
         }
@@ -111,7 +111,7 @@ public class BayrolMqttConnector(
             {
                 case MqttMapping.DeviceStatus:
                     _deviceData.DeviceState = MqttMapping.ToDeviceState(payload.V);
-                    _deviceData.ErrorMessage = _deviceData.DeviceState == DeviceState.Error ? "Device is offline" : null;
+                    _deviceData.ErrorMessage = _deviceData.DeviceState == DeviceState.Offline ? "Device is offline" : null;
                     break;
                 case MqttMapping.PhValue:
                     _deviceData.Ph = payload.V.GetInt32() / 10m;
@@ -164,7 +164,7 @@ public class BayrolMqttConnector(
             return _uninitializedTopics.Count > 0
                 ? new ExtendedAutomaticSaltDeviceData
                 {
-                    DeviceState = DeviceState.Error,
+                    DeviceState = DeviceState.Offline,
                     ErrorMessage = "MQTT retrieving initial values"
                 }
                 : _deviceData.Clone();

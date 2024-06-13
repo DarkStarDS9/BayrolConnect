@@ -90,14 +90,14 @@ public static class Program
             {
                 var values = connector.GetDeviceData();
 
-                if (values.DeviceState != DeviceState.Error)
+                if (values.DeviceState != DeviceState.Offline)
                 {
                     var messageString = JsonSerializer.Serialize(values, AzureJsonOptions);
                     await azureDevice.SendEventAsync(messageString);
                 }
                 else
                 {
-                    _logger.LogWarning($"Device is not OK: {values.ErrorMessage}");
+                    _logger.LogWarning("Device is offline");
                 }
             }
             catch (Exception e)

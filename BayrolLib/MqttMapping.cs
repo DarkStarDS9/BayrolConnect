@@ -51,7 +51,8 @@ public static class MqttMapping
         {
             "17.4" => DeviceState.Ok,
             "17.3" => DeviceState.Warning,
-            _ => DeviceState.Error // offline = 17.0, but this is an error as well
+            "17.0" => DeviceState.Offline,
+            _ => DeviceState.Error
         };
     }
 }

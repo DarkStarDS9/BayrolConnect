@@ -4,5 +4,6 @@ public enum DeviceState
 {
     Ok,
     Warning,
-    Error
+    Error,
+    Offline
 }
