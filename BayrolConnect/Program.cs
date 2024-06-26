@@ -42,73 +42,59 @@ public static class Program
 
         if (config.UseMqtt)
         {
-            await ConnectUsingMqtt(config, azureDevice);
+            await ConnectUsingMqttAsync(config, azureDevice);
         }
         else
         {
-            await ConnectUsingWeb(config, azureDevice);            
+            await ConnectUsingWebAsync(config, azureDevice);            
         }
     }
 
-    private static async Task ConnectUsingWeb(Configuration config, AzureIotCentralDevice azureDevice)
+    private static async Task ConnectUsingWebAsync(Configuration config, AzureIotCentralDevice azureDevice)
     {
         var connector = new BayrolWebConnector(config.User, config.Password, _logger, TimeProvider.System);
 
         while (true)
         {
-            try
-            {
-                var values = await connector.GetDeviceDataAsync(config.Cid);
+            var values = await connector.GetDeviceDataAsync(config.Cid);
 
-                if (values.DeviceState != DeviceState.Error)
-                {
-                    var messageString = JsonSerializer.Serialize(values, AzureJsonOptions);
-                    await azureDevice.SendEventAsync(messageString);
-                }
-                else
-                {
-                    _logger.LogWarning($"Device is not OK: {values.ErrorMessage}");
-                }
-            }
-            catch (Exception e)
+            if (values.DeviceState != DeviceState.Error)
             {
-                _logger.LogError(e, "Failed to send device data");
+                var messageString = JsonSerializer.Serialize(values, AzureJsonOptions);
+                await azureDevice.SendEventAsync(messageString);  // this might throw, but we're not catching it since azureDevice does not recover anyway --> just restart the process
+            }
+            else
+            {
+                _logger.LogWarning($"Device is not OK: {values.ErrorMessage}");
             }
             
             await Task.Delay(GetNextIntervalDelay());
         }
     }
     
-    private static async Task ConnectUsingMqtt(Configuration config, AzureIotCentralDevice azureDevice)
+    private static async Task ConnectUsingMqttAsync(Configuration config, AzureIotCentralDevice azureDevice)
     {
         var connector = new BayrolMqttConnector(config.User, config.Password, config.Cid, _logger, TimeProvider.System);
         await connector.ConnectAsync();
         
         while (true)
         {
-            try
-            {
-                var values = connector.GetDeviceData();
+            var values = connector.GetDeviceData();
 
-                if (values.DeviceState != DeviceState.Offline)
-                {
-                    var messageString = JsonSerializer.Serialize(values, AzureJsonOptions);
-                    await azureDevice.SendEventAsync(messageString);
-                }
-                else
-                {
-                    _logger.LogWarning("Device is offline");
-                }
-            }
-            catch (Exception e)
+            if (values.DeviceState != DeviceState.Offline)
             {
-                _logger.LogError(e, "Failed to send device data");
+                var messageString = JsonSerializer.Serialize(values, AzureJsonOptions);
+                await azureDevice.SendEventAsync(messageString); // this might throw, but we're not catching it since azureDevice does not recover anyway --> just restart the process
             }
-            
+            else
+            {
+                _logger.LogWarning("Device is offline");
+            }
+        
             await Task.Delay(GetNextIntervalDelay());
         }        
     }
-
+    
     static TimeSpan GetNextIntervalDelay()
     {
         var now = DateTime.Now;
