@@ -74,6 +74,7 @@ public static class Program
     
     private static async Task ConnectUsingMqttAsync(Configuration config, AzureIotCentralDevice azureDevice)
     {
+        var sortedTargetValues = config.RedoxTargetValues?.OrderBy(kv => kv.Key).ToList();
         var connector = new BayrolMqttConnector(config.User, config.Password, config.Cid, _logger, TimeProvider.System);
         await connector.ConnectAsync();
         
@@ -83,6 +84,20 @@ public static class Program
 
             if (values.DeviceState != DeviceState.Offline)
             {
+                try
+                {
+                    var newRedoxTarget = GetNewRedoxTarget(sortedTargetValues, values.RedoxTarget);
+                    if (newRedoxTarget != null)
+                    {
+                        await connector.SetRedoxTarget(newRedoxTarget.Value);
+                        _logger.LogInformation($"New Redox Target: {newRedoxTarget}");
+                    }
+                }
+                catch (Exception e)
+                {
+                    _logger.LogWarning($"Error settings new redox target: {e}");
+                }
+
                 var messageString = JsonSerializer.Serialize(values, AzureJsonOptions);
                 await azureDevice.SendEventAsync(messageString); // this might throw, but we're not catching it since azureDevice does not recover anyway --> just restart the process
             }
@@ -94,7 +109,32 @@ public static class Program
             await Task.Delay(GetNextIntervalDelay());
         }        
     }
-    
+
+    /// <summary>
+    /// If there should be a new target value, returns this new value, otherwise returns null.
+    /// </summary>
+    /// <param name="sortedTargetValues">the list of time-based target values</param>
+    /// <param name="currentRedoxTargetValue">the current redox value</param>
+    /// <param name="timeProvider"></param>
+    /// <returns>new target value or <b>null</b> if no change is necessary</returns>
+    /// <exception cref="NotImplementedException"></exception>
+    internal static int? GetNewRedoxTarget(List<KeyValuePair<TimeSpan, int>>? sortedTargetValues, int currentRedoxTargetValue, TimeProvider? timeProvider = null)
+    {
+        if (sortedTargetValues == null || sortedTargetValues.Count == 0) return null;
+        
+        var now = (timeProvider ?? TimeProvider.System).GetUtcNow();
+        
+        var targetValue = sortedTargetValues
+            .OrderBy(kv => kv.Key)
+            .Where(kv => now.TimeOfDay >= kv.Key)
+            .Select(kv => (int?)kv.Value)
+            .LastOrDefault();
+
+        var newTarget = targetValue ?? sortedTargetValues.Last().Value;
+        
+        return newTarget == currentRedoxTargetValue ? null : newTarget;
+    }
+
     static TimeSpan GetNextIntervalDelay()
     {
         var now = DateTime.Now;

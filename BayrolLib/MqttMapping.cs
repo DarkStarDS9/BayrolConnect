@@ -12,6 +12,7 @@ public static class MqttMapping
     public const string DeviceStatus = "1";
     public const string PhValue = "4.78";
     public const string RedoxValue = "4.82";
+    public const string RedoxTargetValue = "4.28";
     public const string TemperatureValue = "4.98";
     public const string SaltValue = "4.100";
     public const string FilterPumpState = "5.29";

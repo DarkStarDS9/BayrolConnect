@@ -6,6 +6,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BayrolLib", "BayrolLib\Bayr
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BayrolLibTests", "BayrolLibTests\BayrolLibTests.csproj", "{C8DD51AD-5D49-46DD-8C60-5188B85DD1BF}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BayrolConnectTests", "BayrolConnectTests\BayrolConnectTests.csproj", "{1C27A20F-C9D4-4680-976F-A2F10368AC5B}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -24,5 +26,9 @@ Global
 		{C8DD51AD-5D49-46DD-8C60-5188B85DD1BF}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{C8DD51AD-5D49-46DD-8C60-5188B85DD1BF}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{C8DD51AD-5D49-46DD-8C60-5188B85DD1BF}.Release|Any CPU.Build.0 = Release|Any CPU
+		{1C27A20F-C9D4-4680-976F-A2F10368AC5B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1C27A20F-C9D4-4680-976F-A2F10368AC5B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1C27A20F-C9D4-4680-976F-A2F10368AC5B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1C27A20F-C9D4-4680-976F-A2F10368AC5B}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

@@ -13,4 +13,6 @@ public class Configuration(string user, string password, string cid, string idSc
     public LogLevel LogLevel { get; } = logLevel;
     
     public bool UseMqtt { get; set; }
+
+    public Dictionary<TimeSpan, int>? RedoxTargetValues { get; set; }
 }

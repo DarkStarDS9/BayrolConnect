@@ -30,6 +30,7 @@ public class BayrolMqttConnector(
     private BayrolWebConnector.MqttSessionIdResponse? _sessionIdResponse;
     private string? _prefix;
     private readonly HashSet<string> _uninitializedTopics = [];
+    private IMqttClient? _client;
 
     public async Task ConnectAsync()
     {
@@ -46,16 +47,16 @@ public class BayrolMqttConnector(
 
         _prefix =  $"d02/{_sessionIdResponse.DeviceSerial}";
         
-        var client = new MqttFactory().CreateMqttClient();
+        _client = new MqttFactory().CreateMqttClient();
         var options = new MqttClientOptionsBuilder()
             .WithWebSocketServer(o => o.WithUri(MqttServer))
             .WithCredentials(_sessionIdResponse.AccessToken, "*")
             .Build();
 
-        client.ApplicationMessageReceivedAsync += ClientOnApplicationMessageReceivedAsync;
-        client.DisconnectedAsync += ClientOnDisconnectedAsync;
+        _client.ApplicationMessageReceivedAsync += ClientOnApplicationMessageReceivedAsync;
+        _client.DisconnectedAsync += ClientOnDisconnectedAsync;
         
-        var response = await client.ConnectAsync(options, CancellationToken.None);
+        var response = await _client.ConnectAsync(options, CancellationToken.None);
         
         if(response.ResultCode != MqttClientConnectResultCode.Success)
         {
@@ -66,8 +67,8 @@ public class BayrolMqttConnector(
         {
             var fullTopic = $"{_prefix}/v/{topic}";
             _uninitializedTopics.Add(fullTopic);
-            var subscribeResult = await client.SubscribeAsync(fullTopic);
-            var publishResult = await client.PublishStringAsync($"{_prefix}/g/{topic}");
+            var subscribeResult = await _client.SubscribeAsync(fullTopic);
+            var publishResult = await _client.PublishStringAsync($"{_prefix}/g/{topic}");
 
             logger.LogInformation($"Subscribed to {subscribeResult.Items.First().TopicFilter.Topic}: {subscribeResult.ReasonString}, data-request-result: {publishResult.ReasonCode}");
         }
@@ -116,6 +117,9 @@ public class BayrolMqttConnector(
                 case MqttMapping.PhValue:
                     _deviceData.Ph = payload.V.GetInt32() / 10m;
                     break;
+                case MqttMapping.RedoxTargetValue:
+                    _deviceData.RedoxTarget = payload.V.GetInt32();
+                    break;
                 case MqttMapping.RedoxValue:
                     _deviceData.Redox = payload.V.GetInt32();
                     break;
@@ -156,6 +160,17 @@ public class BayrolMqttConnector(
 
         return Task.CompletedTask;
     }
+
+    /// <summary>
+    /// Will set the target Redox value in mV if we are connected to the MQTT server.
+    /// Will NOT throw an error if we are not connected yet.
+    /// </summary>
+    /// <param name="value"></param>
+    /// <returns></returns>
+    public Task SetRedoxTarget(int value)
+        => _client?.PublishStringAsync($"{_prefix}/s/{MqttMapping.RedoxTargetValue}",
+               $"{{\"t\":\"{MqttMapping.RedoxTargetValue}\",\"v\":{value},\"min\":400,\"max\":950}}") ??
+           Task.CompletedTask;
 
     public ExtendedAutomaticSaltDeviceData GetDeviceData()
     {
