@@ -17,7 +17,7 @@ to other devices. I don't know if other devices also support MQTT, but if they d
 to make the MqttConnector more generic.
 
 ## What about sending commands via MQTT?
-I haven't implemented this since I don't need it, but it should be easy to add.
+This is implemented for setting the RedoxTargetValue.
 
 ## Usage
 You can use the library for your own project, or use the provided application to connect
@@ -34,13 +34,22 @@ contains the following fields:
     "IdScope": "<azure device id-scope>",
     "DeviceId": "<azure device id>",
     "PrimaryKey": "<azure device primary key",
-    "UseMqtt": true
+    "UseMqtt": true,
+    "RedoxTargetValues":
+    {
+        "05:00:00" : 635,
+        "10:00:00" : 625,
+        "17:30:00" : 720
+    }  
 }
 ```
 UseMqtt = true will use the MqttConnector, otherwise the WebConnector will be used.
 The WebConnector is probably more reliable, but the MqttConnector gives you more data;
 see [AutomaticSaltDeviceData.cs](BayrolLib/AutomaticSaltDeviceData.cs).
 vs. [ExtendedAutomaticSaltDeviceData.cs](BayrolLib/ExtendedAutomaticSaltDeviceData.cs).
+
+Also, when using MQTT you can set the RedoxTargetValue for specific times of the day. Please
+note that the times are in UTC.
 
 ## Contributing
 I'm happy to accept pull requests, so if you feel that something is missing... go ahead :)
