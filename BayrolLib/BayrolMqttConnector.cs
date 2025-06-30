@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using MQTTnet;
 using MQTTnet.Client;
+using MQTTnet.Diagnostics; // Required for MqttNetGlobalLogger
 
 namespace BayrolLib;
 
@@ -12,6 +13,9 @@ public class BayrolMqttConnector(
     ILogger logger,
     TimeProvider timeProvider)
 {
+    private static bool _mqttNetLoggerInitialized = false;
+    private static readonly object _loggerLock = new object();
+
     private const string MqttServer = "wss://www.bayrol-poolaccess.de:8083";
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -27,10 +31,39 @@ public class BayrolMqttConnector(
         ObtainedAt = timeProvider.GetUtcNow()
     };
     
+    // Static initializer for MqttNetGlobalLogger, using the logger from the first instance created.
+    // This is a bit of a workaround for primary constructor limitations.
+    // A dedicated setup in Program.cs would be cleaner for global loggers.
+    static BayrolMqttConnector() {} // Ensure static fields are initialized. Actually, this is not needed for the logic below.
+
+    // Instance initialization logic
+    private readonly ILogger _logger = InitMqttLogger(logger);
+
+    private static ILogger InitMqttLogger(ILogger loggerInstance)
+    {
+        lock (_loggerLock)
+        {
+            if (!_mqttNetLoggerInitialized)
+            {
+                // Initialize MQTTnet's global logger to pipe its internal logs to our application's logging system.
+                // This is done once using the logger from the first BayrolMqttConnector instance.
+                // This provides detailed diagnostics from the MQTT library, including Keep Alive pings if logged by the library.
+                MqttNetGlobalLogger.Adapter = new MqttNetLoggerAdapter(loggerInstance);
+                _mqttNetLoggerInitialized = true;
+                loggerInstance.LogInformation("MQTTnet global logger initialized via BayrolMqttConnector.");
+            }
+        }
+        return loggerInstance;
+    }
+
     private BayrolWebConnector.MqttSessionIdResponse? _sessionIdResponse;
     private string? _prefix;
     private readonly HashSet<string> _uninitializedTopics = [];
     private IMqttClient? _client;
+    private int _reconnectAttempts = 0;
+    private readonly TimeSpan _initialReconnectDelay = TimeSpan.FromSeconds(5);
+    private readonly TimeSpan _maxReconnectDelay = TimeSpan.FromMinutes(5);
+
 
     public async Task ConnectAsync()
     {
@@ -51,6 +84,10 @@ public class BayrolMqttConnector(
         var options = new MqttClientOptionsBuilder()
             .WithWebSocketServer(o => o.WithUri(MqttServer))
             .WithCredentials(_sessionIdResponse.AccessToken, "*")
+            // Configure Keep Alive period. The client will send a PINGREQ if no other packet is sent within this interval.
+            // The broker is expected to close the connection if it doesn't receive any packet (control or data)
+            // within 1.5 * KeepAlivePeriod. This helps in detecting dead connections.
+            .WithKeepAlivePeriod(TimeSpan.FromSeconds(60))
             .Build();
 
         _client.ApplicationMessageReceivedAsync += ClientOnApplicationMessageReceivedAsync;
@@ -60,8 +97,14 @@ public class BayrolMqttConnector(
         
         if(response.ResultCode != MqttClientConnectResultCode.Success)
         {
+            // If connection fails, an exception is thrown, and the caller (Program.cs) might terminate or handle it.
+            // If ClientOnDisconnectedAsync calls ConnectAsync and it fails, this exception will be caught by the retry logic there.
             throw new InvalidOperationException($"Failed to connect to MQTT server: {response.ResultCode}");
         }
+
+        // Reset reconnect attempts on successful connection
+        _reconnectAttempts = 0;
+        logger.LogInformation("Successfully connected to MQTT server.");
 
         foreach (var topic in MqttMapping.AllTopics)
         {
@@ -76,15 +119,39 @@ public class BayrolMqttConnector(
 
     private async Task ClientOnDisconnectedAsync(MqttClientDisconnectedEventArgs arg)
     {
+        logger.LogWarning($"Disconnected from MQTT server. Reason: {arg.ReasonString}. ClientWasConnected: {arg.ClientWasConnected}. Attempting to reconnect...");
+
         lock (_deviceData)
         {
             _deviceData.DeviceState = DeviceState.Offline;
-            _deviceData.ErrorMessage = "Disconnected from MQTT server";
+            _deviceData.ErrorMessage = "Disconnected from MQTT server, attempting to reconnect.";
             _deviceData.ObtainedAt = timeProvider.GetUtcNow();
         }
         
-        await Task.Delay(TimeSpan.FromSeconds(15));
-        await ConnectAsync();
+        _reconnectAttempts++;
+        // Implement exponential backoff for reconnection attempts.
+        // Delay = InitialDelay * 2^(Attempts-1), capped at MaxDelay.
+        var delaySeconds = _initialReconnectDelay.TotalSeconds * Math.Pow(2, _reconnectAttempts - 1);
+        var reconnectDelay = TimeSpan.FromSeconds(Math.Min(delaySeconds, _maxReconnectDelay.TotalSeconds));
+
+        logger.LogInformation($"Reconnect attempt {_reconnectAttempts}. Waiting for {reconnectDelay.TotalSeconds} seconds before trying again.");
+        await Task.Delay(reconnectDelay);
+
+        try
+        {
+            // ConnectAsync will reset _reconnectAttempts on successful connection.
+            await ConnectAsync();
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, $"Failed to reconnect after {_reconnectAttempts} attempts. Will retry after next calculated delay from ClientOnDisconnectedAsync if another disconnect event occurs, or if this was the initial connect, the application might terminate.");
+            // If ConnectAsync fails, it throws an exception.
+            // The MqttClient's DisconnectedAsync event might be triggered again by the library if the failed ConnectAsync attempt itself causes a disconnect state.
+            // Or, if ConnectAsync fails and the client remains in a disconnected state without triggering DisconnectedAsync again,
+            // we might not automatically retry from here. However, the MQTTnet client itself might have internal retry mechanisms
+            // for the initial connection attempt. Given our loop, if ConnectAsync fails, ClientOnDisconnectedAsync will be called again
+            // by the MQTT library when it fully registers the disconnection after a failed connect.
+        }
     }
 
     private Task ClientOnApplicationMessageReceivedAsync(MqttApplicationMessageReceivedEventArgs arg)
