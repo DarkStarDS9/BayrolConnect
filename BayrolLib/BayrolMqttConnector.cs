@@ -1,8 +1,10 @@
 using System.Text.Json;
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using MQTTnet;
 using MQTTnet.Client;
-using MQTTnet.Diagnostics; // Required for MqttNetGlobalLogger
+using MQTTnet.Internal; // For MqttNetLog
+using MQTTnet.Diagnostics; // For MqttNetLogLevel
 
 namespace BayrolLib;
 
@@ -10,17 +12,20 @@ public class BayrolMqttConnector(
     string username,
     string password,
     string cid,
-    ILogger logger,
+    ILogger logger, // This is the logger passed in
     TimeProvider timeProvider)
 {
-    private static bool _mqttNetLoggerInitialized = false;
-    private static readonly object _loggerLock = new object();
+    private static bool _mqttNetLoggingSubscribed = false;
+    private static readonly object _logSubscriptionLock = new object();
 
     private const string MqttServer = "wss://www.bayrol-poolaccess.de:8083";
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true
     };
+
+    // Ensure MQTTnet logging is subscribed to using the logger from the first instance.
+    private readonly ILogger _instanceLogger = SubscribeToMqttNetLogs(logger);
     
     private readonly BayrolWebConnector _webConnector = new(username, password, logger, timeProvider);
 
@@ -31,36 +36,54 @@ public class BayrolMqttConnector(
         ObtainedAt = timeProvider.GetUtcNow()
     };
     
-    // Static initializer for MqttNetGlobalLogger, using the logger from the first instance created.
-    // This is a bit of a workaround for primary constructor limitations.
-    // A dedicated setup in Program.cs would be cleaner for global loggers.
-    static BayrolMqttConnector() {} // Ensure static fields are initialized. Actually, this is not needed for the logic below.
+    // private readonly ILogger _logger = InitMqttLogger(logger); // Removed, logger is used directly
 
-    // Instance initialization logic
-    private readonly ILogger _logger = InitMqttLogger(logger);
-
-    private static ILogger InitMqttLogger(ILogger loggerInstance)
-    {
-        lock (_loggerLock)
-        {
-            if (!_mqttNetLoggerInitialized)
-            {
-                // Initialize MQTTnet's global logger to pipe its internal logs to our application's logging system.
-                // This is done once using the logger from the first BayrolMqttConnector instance.
-                // This provides detailed diagnostics from the MQTT library, including Keep Alive pings if logged by the library.
-                MqttNetGlobalLogger.Adapter = new MqttNetLoggerAdapter(loggerInstance);
-                _mqttNetLoggerInitialized = true;
-                loggerInstance.LogInformation("MQTTnet global logger initialized via BayrolMqttConnector.");
-            }
-        }
-        return loggerInstance;
-    }
+    // private static ILogger InitMqttLogger(ILogger loggerInstance) // Removed
+    // {
+    //     lock (_loggerLock)
+    //     {
+    //         if (!_mqttNetLoggerInitialized)
+    //         {
+    //             MqttNetGlobalLogger.Adapter = new MqttNetLoggerAdapter(loggerInstance);
+    //             _mqttNetLoggerInitialized = true;
+    //             loggerInstance.LogInformation("MQTTnet global logger initialized via BayrolMqttConnector.");
+    //         }
+    //     }
+    //     return loggerInstance;
+    // }
 
     private BayrolWebConnector.MqttSessionIdResponse? _sessionIdResponse;
     private string? _prefix;
     private readonly HashSet<string> _uninitializedTopics = [];
     private IMqttClient? _client;
     private int _reconnectAttempts = 0;
+
+    private static ILogger SubscribeToMqttNetLogs(ILogger loggerInstance)
+    {
+        lock (_logSubscriptionLock)
+        {
+            if (!_mqttNetLoggingSubscribed)
+            {
+                MqttNetLog.LogMessagePublished += (s, e) =>
+                {
+                    var msLogLevel = e.Level switch
+                    {
+                        MQTTnet.Diagnostics.MqttNetLogLevel.Verbose => LogLevel.Trace,
+                        MQTTnet.Diagnostics.MqttNetLogLevel.Info    => LogLevel.Information,
+                        MQTTnet.Diagnostics.MqttNetLogLevel.Warning => LogLevel.Warning,
+                        MQTTnet.Diagnostics.MqttNetLogLevel.Error   => LogLevel.Error,
+                        _                       => LogLevel.Debug // Default for anything else
+                    };
+
+                    // Use the loggerInstance captured by this lambda
+                    loggerInstance.Log(msLogLevel, e.Exception, $"[MQTTnet::{e.Source}] {e.Message}");
+                };
+                _mqttNetLoggingSubscribed = true;
+                loggerInstance.LogInformation("Subscribed to MqttNetLog.LogMessagePublished for detailed MQTT library logging.");
+            }
+        }
+        return loggerInstance; // Return the logger to be assigned to _instanceLogger, or just use logger directly.
+    }
     private readonly TimeSpan _initialReconnectDelay = TimeSpan.FromSeconds(5);
     private readonly TimeSpan _maxReconnectDelay = TimeSpan.FromMinutes(5);
 
