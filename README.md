@@ -1,9 +1,7 @@
 # BayrolConnect
 C# library to connect to Automatic Salt using bayrol-poolaccess.de and/or MQTT
 
-It includes a Dockerfile to build a docker image that can publish your device-data to Azure IoT Central:
-
-![Azure IoT Central](Azure_IoT_Central.png)
+It includes a Dockerfile to build a docker image that can publish your device-data to a Prometheus/Grafana monitoring solution.
 
 ## Known Issues
 Since I needed this to work before my vacation, it isn't as clean & robust as I would
@@ -21,7 +19,7 @@ This is implemented for setting the RedoxTargetValue.
 
 ## Usage
 You can use the library for your own project, or use the provided application to connect
-to Azure IoT Central.
+to a Prometheus/Grafana monitoring solution.
 
 To do this, just pass a json via the environment variable `CONFIG` to the container, which
 contains the following fields:
@@ -31,9 +29,6 @@ contains the following fields:
     "User": "<bayrol-poolaccess user>",
     "Password": "<bayrol-poolaccess password>",
     "Cid": "<cid extracted from the url to your device>",
-    "IdScope": "<azure device id-scope>",
-    "DeviceId": "<azure device id>",
-    "PrimaryKey": "<azure device primary key",
     "UseMqtt": true,
     "RedoxTargetValues":
     {
@@ -50,6 +45,13 @@ vs. [ExtendedAutomaticSaltDeviceData.cs](BayrolLib/ExtendedAutomaticSaltDeviceDa
 
 Also, when using MQTT you can set the RedoxTargetValue for specific times of the day. Please
 note that the times are in UTC.
+
+To run the solution, execute the following command:
+```bash
+docker-compose up -d
+```
+
+You can then access Grafana at http://localhost:3000.
 
 ## Contributing
 I'm happy to accept pull requests, so if you feel that something is missing... go ahead :)

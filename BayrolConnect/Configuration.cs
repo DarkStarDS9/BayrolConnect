@@ -1,18 +1,20 @@
-using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.Logging;
 
 namespace BayrolConnect;
 
-public class Configuration(string user, string password, string cid, string idScope, string deviceId, string primaryKey, LogLevel logLevel = LogLevel.Information)
+public class Configuration
 {
-    public string User { get; } = user;
-    public string Password { get; } = password;
-    public string Cid { get; } = cid;
-    public string IdScope { get; } = idScope;
-    public string DeviceId { get; } = deviceId;
-    public string PrimaryKey { get; } = primaryKey;
-    public LogLevel LogLevel { get; } = logLevel;
+    public string User { get; set; } = null!;
+    public string Password { get; set; } = null!;
+    public string Cid { get; set; } = null!;
+    public bool UseMqtt { get; set; } = false;
+    public LogLevel LogLevel { get; set; } = LogLevel.Information;
     
-    public bool UseMqtt { get; set; }
-
-    public Dictionary<TimeSpan, int>? RedoxTargetValues { get; set; }
+    /// <summary>
+    /// A list of timespans and the corresponding redox target value in mV.
+    /// The list does not need to be sorted.
+    /// The values are used to set the redox target value based on the time of day.
+    /// For a given time, the last value in the sorted list with a timespan less than or equal to the current time is used.
+    /// </summary>
+    public List<KeyValuePair<TimeSpan, int>>? RedoxTargetValues { get; set; }
 }

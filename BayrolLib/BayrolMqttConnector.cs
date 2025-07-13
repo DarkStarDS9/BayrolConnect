@@ -1,9 +1,7 @@
 using System.Text.Json;
-using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using MQTTnet;
 using MQTTnet.Client;
-using MQTTnet.Internal; // For MqttNetLog
 using MQTTnet.Diagnostics; // For MqttNetLogLevel
 
 namespace BayrolLib;
@@ -64,9 +62,10 @@ public class BayrolMqttConnector(
         {
             if (!_mqttNetLoggingSubscribed)
             {
-                MqttNetLog.LogMessagePublished += (s, e) =>
+                var mqttNetLogger = new MqttNetEventLogger();
+                mqttNetLogger.LogMessagePublished += (s, e) =>
                 {
-                    var msLogLevel = e.Level switch
+                    var msLogLevel = e.LogMessage.Level switch
                     {
                         MQTTnet.Diagnostics.MqttNetLogLevel.Verbose => LogLevel.Trace,
                         MQTTnet.Diagnostics.MqttNetLogLevel.Info    => LogLevel.Information,
@@ -76,7 +75,7 @@ public class BayrolMqttConnector(
                     };
 
                     // Use the loggerInstance captured by this lambda
-                    loggerInstance.Log(msLogLevel, e.Exception, $"[MQTTnet::{e.Source}] {e.Message}");
+                    loggerInstance.Log(msLogLevel, e.LogMessage.Exception, $"[MQTTnet::{e.LogMessage.Source}] {e.LogMessage.Message}");
                 };
                 _mqttNetLoggingSubscribed = true;
                 loggerInstance.LogInformation("Subscribed to MqttNetLog.LogMessagePublished for detailed MQTT library logging.");

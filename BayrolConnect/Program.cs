@@ -1,14 +1,13 @@
 ﻿using System.Text.Json;
-using System.Text.Json.Serialization;
 using BayrolLib;
 using Microsoft.Extensions.Logging;
+using Prometheus;
 
 namespace BayrolConnect;
 
 public static class Program
 {
     private static ILogger _logger = null!;
-    private static readonly JsonSerializerOptions AzureJsonOptions = new();
     
     public static async Task Main(string[] args)
     {
@@ -35,22 +34,20 @@ public static class Program
             ? loggerBuilder.CreateLogger<BayrolMqttConnector>()
             : loggerBuilder.CreateLogger<BayrolWebConnector>();
 
-        await using var azureDevice = new AzureIotCentralDevice(config.IdScope, config.DeviceId, config.PrimaryKey, _logger);
-        if(!await azureDevice.Connect()) return;
-
-        AzureJsonOptions.Converters.Add(new JsonStringEnumConverter());
+        var server = new KestrelMetricServer(port: 8080);
+        server.Start();
 
         if (config.UseMqtt)
         {
-            await ConnectUsingMqttAsync(config, azureDevice);
+            await ConnectUsingMqttAsync(config);
         }
         else
         {
-            await ConnectUsingWebAsync(config, azureDevice);            
+            await ConnectUsingWebAsync(config);
         }
     }
 
-    private static async Task ConnectUsingWebAsync(Configuration config, AzureIotCentralDevice azureDevice)
+    private static async Task ConnectUsingWebAsync(Configuration config)
     {
         var connector = new BayrolWebConnector(config.User, config.Password, _logger, TimeProvider.System);
 
@@ -60,8 +57,7 @@ public static class Program
 
             if (values.DeviceState != DeviceState.Error)
             {
-                var messageString = JsonSerializer.Serialize(values, AzureJsonOptions);
-                await azureDevice.SendEventAsync(messageString);  // this might throw, but we're not catching it since azureDevice does not recover anyway --> just restart the process
+                UpdateMetrics(values);
             }
             else
             {
@@ -72,7 +68,7 @@ public static class Program
         }
     }
     
-    private static async Task ConnectUsingMqttAsync(Configuration config, AzureIotCentralDevice azureDevice)
+    private static async Task ConnectUsingMqttAsync(Configuration config)
     {
         var sortedTargetValues = config.RedoxTargetValues?.OrderBy(kv => kv.Key).ToList();
         var connector = new BayrolMqttConnector(config.User, config.Password, config.Cid, _logger, TimeProvider.System);
@@ -98,8 +94,7 @@ public static class Program
                     _logger.LogWarning($"Error settings new redox target: {e}");
                 }
 
-                var messageString = JsonSerializer.Serialize(values, AzureJsonOptions);
-                await azureDevice.SendEventAsync(messageString); // this might throw, but we're not catching it since azureDevice does not recover anyway --> just restart the process
+                UpdateMetrics(values);
             }
             else
             {
@@ -108,6 +103,27 @@ public static class Program
         
             await Task.Delay(GetNextIntervalDelay());
         }        
+    }
+
+    private static void UpdateMetrics(AutomaticSaltDeviceData data)
+    {
+        Metrics.DeviceState.Set((int)data.DeviceState);
+        Metrics.PhValue.Set((double)data.Ph);
+        Metrics.RedoxValue.Set(data.Redox);
+        Metrics.TemperatureValue.Set((double)data.Temperature);
+        Metrics.SaltValue.Set((double)data.Salt);
+
+        if (data is ExtendedAutomaticSaltDeviceData extendedData)
+        {
+            Metrics.RedoxTargetValue.Set(extendedData.RedoxTarget);
+            Metrics.FilterPumpState.Set(extendedData.FilterPumpState ? 1 : 0);
+            Metrics.PhAutomationState.Set(extendedData.PhAutomationState ? 1 : 0);
+            Metrics.SaltProductionState.Set(extendedData.SaltProductionState ? 1 : 0);
+            Metrics.BoostModeState.Set(extendedData.BoostModeState ? 1 : 0);
+            Metrics.PhDosingRate.Set(extendedData.PhDosingRate);
+            Metrics.SaltProductionRate.Set(extendedData.SaltProductionRate);
+            Metrics.CanisterState.Set(extendedData.CanisterState ? 1 : 0);
+        }
     }
 
     /// <summary>
