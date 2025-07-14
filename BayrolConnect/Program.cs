@@ -73,10 +73,25 @@ public static class Program
         var sortedTargetValues = config.RedoxTargetValues?.OrderBy(kv => kv.Key).ToList();
         var connector = new BayrolMqttConnector(config.User, config.Password, config.Cid, _logger, TimeProvider.System);
         await connector.ConnectAsync();
+
+        var lastState = DeviceState.Offline;
+
+        var isInStartup = true;
+        
+        ExtendedAutomaticSaltDeviceData? values = null;
         
         while (true)
         {
-            var values = connector.GetDeviceData();
+            do
+            {
+                values = connector.GetDeviceData();
+            } while (isInStartup && values.DeviceState == DeviceState.Offline && await StartupRetryDelayAsync());
+
+            if(values.DeviceState != lastState)
+            {
+                _logger.LogInformation($"Device state changed: {values.DeviceState}");
+                lastState = values.DeviceState;
+            }
 
             if (values.DeviceState != DeviceState.Offline)
             {
@@ -103,6 +118,13 @@ public static class Program
         
             await Task.Delay(GetNextIntervalDelay());
         }        
+    }
+
+    private static async ValueTask<bool> StartupRetryDelayAsync()
+    {
+        _logger.LogInformation("Device not ready yet, waiting for 5 seconds before retrying...");
+        await Task.Delay(TimeSpan.FromSeconds(5));
+        return true;
     }
 
     private static void UpdateMetrics(AutomaticSaltDeviceData data)
