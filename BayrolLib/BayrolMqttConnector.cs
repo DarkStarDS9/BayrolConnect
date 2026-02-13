@@ -135,13 +135,15 @@ public class BayrolMqttConnector(
             var subscribeResult = await _client.SubscribeAsync(fullTopic);
             var publishResult = await _client.PublishStringAsync($"{_prefix}/g/{topic}");
 
-            logger.LogInformation($"Subscribed to {subscribeResult.Items.First().TopicFilter.Topic}: {subscribeResult.ReasonString}, data-request-result: {publishResult.ReasonCode}");
+            logger.LogInformation("Subscribed to {Topic}: {ReasonString}, data-request-result: {ReasonCode}", 
+                subscribeResult.Items.First().TopicFilter.Topic, subscribeResult.ReasonString, publishResult.ReasonCode);
         }
     }
 
     private async Task ClientOnDisconnectedAsync(MqttClientDisconnectedEventArgs arg)
     {
-        logger.LogWarning($"Disconnected from MQTT server. Reason: {arg.ReasonString}. ClientWasConnected: {arg.ClientWasConnected}. Attempting to reconnect...");
+        logger.LogWarning("Disconnected from MQTT server. Reason: {ReasonString}. ClientWasConnected: {ClientWasConnected}. Attempting to reconnect...", 
+            arg.ReasonString, arg.ClientWasConnected);
 
         lock (_deviceData)
         {
@@ -156,7 +158,8 @@ public class BayrolMqttConnector(
         var delaySeconds = _initialReconnectDelay.TotalSeconds * Math.Pow(2, _reconnectAttempts - 1);
         var reconnectDelay = TimeSpan.FromSeconds(Math.Min(delaySeconds, _maxReconnectDelay.TotalSeconds));
 
-        logger.LogInformation($"Reconnect attempt {_reconnectAttempts}. Waiting for {reconnectDelay.TotalSeconds} seconds before trying again.");
+        logger.LogInformation("Reconnect attempt {ReconnectAttempts}. Waiting for {DelaySeconds} seconds before trying again.", 
+            _reconnectAttempts, reconnectDelay.TotalSeconds);
         await Task.Delay(reconnectDelay);
 
         try
@@ -166,7 +169,8 @@ public class BayrolMqttConnector(
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, $"Failed to reconnect after {_reconnectAttempts} attempts. Will retry after next calculated delay from ClientOnDisconnectedAsync if another disconnect event occurs, or if this was the initial connect, the application might terminate.");
+            logger.LogError(ex, "Failed to reconnect after {ReconnectAttempts} attempts. Will retry after next calculated delay from ClientOnDisconnectedAsync if another disconnect event occurs, or if this was the initial connect, the application might terminate.", 
+                _reconnectAttempts);
             // If ConnectAsync fails, it throws an exception.
             // The MqttClient's DisconnectedAsync event might be triggered again by the library if the failed ConnectAsync attempt itself causes a disconnect state.
             // Or, if ConnectAsync fails and the client remains in a disconnected state without triggering DisconnectedAsync again,
@@ -240,7 +244,7 @@ public class BayrolMqttConnector(
                     _deviceData.CanisterState = MqttMapping.ToBool(payload.V);
                     break;
                 default:
-                    logger.LogWarning($"Unknown topic {payload.T} with value {payload.V}");
+                    logger.LogWarning("Unknown topic {Topic} with value {Value}", payload.T, payload.V);
                     break;
             }
 

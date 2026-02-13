@@ -30,8 +30,8 @@ public static class MqttMapping
         // set AllTopics using reflection
         AllTopics = typeof(MqttMapping).GetFields()
             .Where(f => f.FieldType == typeof(string))
-            .Select(f => (string)f.GetValue(null))
-            .ToArray();
+            .Select(f => (string)f.GetValue(null)!)
+            .ToArray()!;
     }
 
     public static bool ToBool(JsonElement element)

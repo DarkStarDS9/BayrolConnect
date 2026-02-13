@@ -30,6 +30,7 @@ contains the following fields:
     "Password": "<bayrol-poolaccess password>",
     "Cid": "<cid extracted from the url to your device>",
     "UseMqtt": true,
+    "LogLevel": "Information",
     "RedoxTargetValues":
     {
         "05:00:00" : 635,
@@ -43,8 +44,20 @@ The WebConnector is probably more reliable, but the MqttConnector gives you more
 see [AutomaticSaltDeviceData.cs](BayrolLib/AutomaticSaltDeviceData.cs).
 vs. [ExtendedAutomaticSaltDeviceData.cs](BayrolLib/ExtendedAutomaticSaltDeviceData.cs).
 
+LogLevel can be set to one of: `Trace`, `Debug`, `Information`, `Warning`, `Error`, `Critical`. 
+The default is `Information`.
+
 Also, when using MQTT you can set the RedoxTargetValue for specific times of the day. Please
 note that the times are in UTC.
+
+**Important Security Note**: Before running in production, set a secure Grafana admin password:
+```bash
+export GRAFANA_ADMIN_PASSWORD='your-secure-password'
+export CONFIG='{"User":"...","Password":"...","Cid":"...","UseMqtt":true}'
+docker-compose up -d
+```
+
+See [SECURITY.md](SECURITY.md) for more security best practices.
 
 To run the solution, execute the following command:
 ```bash
@@ -55,3 +68,5 @@ You can then access Grafana at http://localhost:3000.
 
 ## Contributing
 I'm happy to accept pull requests, so if you feel that something is missing... go ahead :)
+
+Please read [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to contribute.

@@ -16,7 +16,7 @@ public class ProgramTests
                 new(new TimeSpan(18, 0, 0), 720)
             },
             new TimeSpan(7, 0, 0),
-            default(int?)
+            default(int?)!
         },
         new object[]
         {
@@ -38,7 +38,7 @@ public class ProgramTests
                 new(new TimeSpan(18, 0, 0), 720)
             },
             new TimeSpan(22, 00, 0),
-            default(int?)
+            default(int?)!
         },
         new object[]
         {
@@ -58,14 +58,14 @@ public class ProgramTests
             {
             },
             new TimeSpan(22, 00, 0),
-            default(int?)
+            default(int?)!
         },
         new object[]
         {
             640,
             default(List<KeyValuePair<TimeSpan, int>>)!,
             new TimeSpan(22, 00, 0),
-            default(int?)
+            default(int?)!
         },
         new object[]
         {
