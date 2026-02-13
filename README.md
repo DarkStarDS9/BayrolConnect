@@ -68,3 +68,5 @@ You can then access Grafana at http://localhost:3000.
 
 ## Contributing
 I'm happy to accept pull requests, so if you feel that something is missing... go ahead :)
+
+Please read [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to contribute.
