@@ -13,6 +13,8 @@ public class BayrolWebConnector
     private const string DataPath = "/webview/getdata.php?cid=";
     private const string DevicePath = "/device.php?c=";
     private const string GetAccessTokenPath = "/api/?code=";
+    private const int MaxRetryAttempts = 10;
+    private const int RetryDelayMinutes = 5;
 
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
 
@@ -40,13 +42,14 @@ public class BayrolWebConnector
         {
             foreach (var header in response.Headers)
             {
-                _logger.LogTrace($"{header.Key} : {string.Join(", ", header.Value)}");
+                _logger.LogTrace("{HeaderKey} : {HeaderValue}", header.Key, string.Join(", ", header.Value));
             }
         }
     }
 
     private async Task ReconnectAfterFailureAsync()
     {
+        int retryCount = 0;
         do
         {
             try
@@ -57,10 +60,18 @@ public class BayrolWebConnector
             }
             catch (Exception e)
             {
-                _logger.LogError($"Failed with {e} - try to reconnect again in 5 minutes");
-                await Task.Delay(1000 * 60 * 5);
+                retryCount++;
+                if (retryCount >= MaxRetryAttempts)
+                {
+                    _logger.LogError(e, "Max retry attempts ({MaxRetries}) reached. Giving up.", MaxRetryAttempts);
+                    throw new InvalidOperationException($"Failed to reconnect after {MaxRetryAttempts} attempts", e);
+                }
+                
+                _logger.LogError(e, "Failed to reconnect (attempt {RetryCount}/{MaxRetries}). Retrying in {DelayMinutes} minutes", 
+                    retryCount, MaxRetryAttempts, RetryDelayMinutes);
+                await Task.Delay(TimeSpan.FromMinutes(RetryDelayMinutes));
             }
-        } while (!_loginSuccess); // TODO add max retries
+        } while (!_loginSuccess);
     }
     
     private async Task GetSessionIdAsync()
@@ -68,7 +79,8 @@ public class BayrolWebConnector
         var response = await _httpClient.GetAsync(BaseUrl + BasePath + LoginUri);
         if (response.Headers.Contains("PHPSESSID"))
         {
-            _logger.LogInformation("Getting session ID : " + response.Headers.GetValues("PHPSESSID"));
+            var sessionId = response.Headers.GetValues("PHPSESSID").FirstOrDefault();
+            _logger.LogInformation("Getting session ID : {SessionId}", sessionId);
         }
         PrintHeaders(response);
     }
@@ -99,7 +111,7 @@ public class BayrolWebConnector
         if (response.StatusCode != System.Net.HttpStatusCode.OK)
         {
             _loginSuccess = false;
-            _logger.LogWarning($@"{nameof(GetMqttSessionIdAsync)}: returned code is {response.StatusCode}");
+            _logger.LogWarning("{MethodName}: returned code is {StatusCode}", nameof(GetMqttSessionIdAsync), response.StatusCode);
             return null;
         }
 
@@ -124,7 +136,7 @@ public class BayrolWebConnector
         {
             _loginSuccess = false;
 
-            _logger.LogError($"{nameof(GetDeviceDataAsync)}: returned code is {response.StatusCode}");
+            _logger.LogError("{MethodName}: returned code is {StatusCode}", nameof(GetDeviceDataAsync), response.StatusCode);
             return new AutomaticSaltDeviceData { DeviceState = DeviceState.Error, ErrorMessage = "Unable to retrieve data" };
         }
 

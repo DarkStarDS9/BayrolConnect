@@ -9,6 +9,10 @@ public static class Program
 {
     private static ILogger _logger = null!;
     
+    private const int StartupRetryDelaySeconds = 5;
+    private const int ReconnectDelayMinutes = 5;
+    private const int MetricsIntervalMinutes = 5;
+    
     public static async Task Main(string[] args)
     {
         var configJson = args.Length == 1 ? args[0] : Environment.GetEnvironmentVariable("CONFIG");
@@ -61,7 +65,7 @@ public static class Program
             }
             else
             {
-                _logger.LogWarning($"Device is not OK: {values.ErrorMessage}");
+                _logger.LogWarning("Device is not OK: {ErrorMessage}", values.ErrorMessage);
             }
             
             await Task.Delay(GetNextIntervalDelay());
@@ -89,7 +93,7 @@ public static class Program
 
             if(values.DeviceState != lastState)
             {
-                _logger.LogInformation($"Device state changed: {values.DeviceState}");
+                _logger.LogInformation("Device state changed: {DeviceState}", values.DeviceState);
                 lastState = values.DeviceState;
             }
 
@@ -101,12 +105,12 @@ public static class Program
                     if (newRedoxTarget != null)
                     {
                         await connector.SetRedoxTarget(newRedoxTarget.Value);
-                        _logger.LogInformation($"New Redox Target: {newRedoxTarget}");
+                        _logger.LogInformation("New Redox Target: {RedoxTarget}", newRedoxTarget);
                     }
                 }
                 catch (Exception e)
                 {
-                    _logger.LogWarning($"Error settings new redox target: {e}");
+                    _logger.LogWarning(e, "Error setting new redox target");
                 }
 
                 UpdateMetrics(values);
@@ -122,8 +126,8 @@ public static class Program
 
     private static async ValueTask<bool> StartupRetryDelayAsync()
     {
-        _logger.LogInformation("Device not ready yet, waiting for 5 seconds before retrying...");
-        await Task.Delay(TimeSpan.FromSeconds(5));
+        _logger.LogInformation("Device not ready yet, waiting for {DelaySeconds} seconds before retrying...", StartupRetryDelaySeconds);
+        await Task.Delay(TimeSpan.FromSeconds(StartupRetryDelaySeconds));
         return true;
     }
 
@@ -176,8 +180,8 @@ public static class Program
     static TimeSpan GetNextIntervalDelay()
     {
         var now = DateTime.Now;
-        var minutes = now.Minute % 5;
-        var secondsToNextInterval = (5 - minutes) * 60 - now.Second;
+        var minutes = now.Minute % MetricsIntervalMinutes;
+        var secondsToNextInterval = (MetricsIntervalMinutes - minutes) * 60 - now.Second;
         return TimeSpan.FromSeconds(secondsToNextInterval);
     }    
 }
