@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using MQTTnet;
 using MQTTnet.Client;
 using MQTTnet.Diagnostics; // For MqttNetLogLevel
+using MQTTnet.Protocol; // For MqttQualityOfServiceLevel
 
 namespace BayrolLib;
 
@@ -11,7 +12,10 @@ public class BayrolMqttConnector(
     string password,
     string cid,
     ILogger logger, // This is the logger passed in
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    TimeSpan? repollInterval = null,
+    TimeSpan? staleWarnThreshold = null,
+    TimeSpan? staleReconnectThreshold = null)
 {
     private static bool _mqttNetLoggingSubscribed = false;
     private static readonly object _logSubscriptionLock = new object();
@@ -55,6 +59,20 @@ public class BayrolMqttConnector(
     private readonly HashSet<string> _uninitializedTopics = [];
     private IMqttClient? _client;
     private int _reconnectAttempts = 0;
+
+    // The Bayrol server pushes value changes; it does not reliably keep pushing every
+    // topic forever (redox / production rate in particular can go silent). To avoid
+    // stalled values we actively re-request all values on an interval and watch each
+    // topic's freshness, forcing a full reconnect if a topic goes silent for too long.
+    private readonly TimeSpan _repollInterval = repollInterval ?? TimeSpan.FromSeconds(60);
+    private readonly TimeSpan _staleWarnThreshold = staleWarnThreshold ?? TimeSpan.FromMinutes(3);
+    private readonly TimeSpan _staleReconnectThreshold = staleReconnectThreshold ?? TimeSpan.FromMinutes(6);
+    private readonly TimeSpan _watchdogInterval = TimeSpan.FromSeconds(30);
+
+    // Last time we received a message for each topic id (e.g. "4.82"). Guarded by _deviceData.
+    private readonly Dictionary<string, DateTimeOffset> _lastTopicUpdate = new();
+    private bool _backgroundTasksStarted;
+    private volatile bool _forcedReconnectInProgress;
 
     private static ILogger SubscribeToMqttNetLogs(ILogger loggerInstance)
     {
@@ -126,16 +144,57 @@ public class BayrolMqttConnector(
 
         // Reset reconnect attempts on successful connection
         _reconnectAttempts = 0;
+        _forcedReconnectInProgress = false;
         logger.LogInformation("Successfully connected to MQTT server.");
 
+        var now = timeProvider.GetUtcNow();
         foreach (var topic in MqttMapping.AllTopics)
         {
             var fullTopic = $"{_prefix}/v/{topic}";
-            _uninitializedTopics.Add(fullTopic);
-            var subscribeResult = await _client.SubscribeAsync(fullTopic);
-            var publishResult = await _client.PublishStringAsync($"{_prefix}/g/{topic}");
+            // Subscribe with QoS 1 (at-least-once) so the broker redelivers messages we miss,
+            // instead of the default QoS 0 where any dropped update is lost forever.
+            var subscribeResult = await _client.SubscribeAsync(fullTopic, MqttQualityOfServiceLevel.AtLeastOnce);
 
-            logger.LogInformation($"Subscribed to {subscribeResult.Items.First().TopicFilter.Topic}: {subscribeResult.ReasonString}, data-request-result: {publishResult.ReasonCode}");
+            lock (_deviceData)
+            {
+                _uninitializedTopics.Add(fullTopic);
+                // Seed freshness so a freshly (re)connected session isn't immediately flagged stale.
+                _lastTopicUpdate[topic] = now;
+            }
+
+            logger.LogInformation($"Subscribed to {subscribeResult.Items.First().TopicFilter.Topic}: {subscribeResult.ReasonString}");
+        }
+
+        // Request the current value of every topic now, then keep re-requesting on a timer.
+        await RequestAllValuesAsync();
+
+        StartBackgroundTasks();
+    }
+
+    /// <summary>
+    /// Publishes a getter (<c>/g/</c>) request for every topic so the server resends its
+    /// current value. Used both at connect time and periodically to recover from stalled
+    /// topics. Never throws - publish failures are logged and ignored.
+    /// </summary>
+    private async Task RequestAllValuesAsync()
+    {
+        var client = _client;
+        if (client is not { IsConnected: true } || _prefix == null)
+        {
+            return;
+        }
+
+        foreach (var topic in MqttMapping.AllTopics)
+        {
+            try
+            {
+                await client.PublishStringAsync($"{_prefix}/g/{topic}",
+                    qualityOfServiceLevel: MqttQualityOfServiceLevel.AtLeastOnce);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, $"Failed to request value for topic {topic}");
+            }
         }
     }
 
@@ -193,11 +252,19 @@ public class BayrolMqttConnector(
             throw new Exception("Failed to deserialize payload");
         }
 
+        var topicId = arg.ApplicationMessage.Topic.Split('/').Last();
+
         lock (_deviceData)
         {
             _uninitializedTopics.Remove(arg.ApplicationMessage.Topic);
-            
-            switch (arg.ApplicationMessage.Topic.Split('/').Last())
+            // Only track freshness for topics we know about and (re)seed on connect, so an
+            // unexpected/unsubscribed topic can never keep the watchdog reconnecting forever.
+            if (_lastTopicUpdate.ContainsKey(topicId))
+            {
+                _lastTopicUpdate[topicId] = timeProvider.GetUtcNow();
+            }
+
+            switch (topicId)
             {
                 case MqttMapping.DeviceStatus:
                     _deviceData.DeviceState = MqttMapping.ToDeviceState(payload.V);
@@ -258,7 +325,8 @@ public class BayrolMqttConnector(
     /// <returns></returns>
     public Task SetRedoxTarget(int value)
         => _client?.PublishStringAsync($"{_prefix}/s/{MqttMapping.RedoxTargetValue}",
-               $"{{\"t\":\"{MqttMapping.RedoxTargetValue}\",\"v\":{value},\"min\":400,\"max\":950}}") ??
+               $"{{\"t\":\"{MqttMapping.RedoxTargetValue}\",\"v\":{value},\"min\":400,\"max\":950}}",
+               MqttQualityOfServiceLevel.AtLeastOnce) ??
            Task.CompletedTask;
 
     public ExtendedAutomaticSaltDeviceData GetDeviceData()
@@ -273,6 +341,143 @@ public class BayrolMqttConnector(
                 }
                 : _deviceData.Clone();
         }
+    }
+
+    /// <summary>
+    /// Starts the periodic re-poll and staleness-watchdog loops exactly once. Reconnects
+    /// reuse the same loops, which always read the current <see cref="_client"/> field.
+    /// </summary>
+    private void StartBackgroundTasks()
+    {
+        lock (_deviceData)
+        {
+            if (_backgroundTasksStarted)
+            {
+                return;
+            }
+            _backgroundTasksStarted = true;
+        }
+
+        _ = Task.Run(RepollLoopAsync);
+        _ = Task.Run(WatchdogLoopAsync);
+    }
+
+    private async Task RepollLoopAsync()
+    {
+        using var timer = new PeriodicTimer(_repollInterval);
+        while (await timer.WaitForNextTickAsync())
+        {
+            try
+            {
+                await RequestAllValuesAsync();
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Error during periodic value re-poll");
+            }
+        }
+    }
+
+    private async Task WatchdogLoopAsync()
+    {
+        using var timer = new PeriodicTimer(_watchdogInterval);
+        while (await timer.WaitForNextTickAsync())
+        {
+            try
+            {
+                await CheckStalenessAsync();
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Error during staleness watchdog check");
+            }
+        }
+    }
+
+    private async Task CheckStalenessAsync()
+    {
+        // If we're not currently connected, a reconnect is already in progress (or about to
+        // start) - don't flag everything as stale or pile on another forced reconnect.
+        if (_client is not { IsConnected: true } || _forcedReconnectInProgress)
+        {
+            return;
+        }
+
+        List<KeyValuePair<string, TimeSpan>> warn;
+        List<KeyValuePair<string, TimeSpan>> reconnect;
+        var now = timeProvider.GetUtcNow();
+
+        lock (_deviceData)
+        {
+            // While initial values are still arriving we don't have a meaningful baseline.
+            if (_uninitializedTopics.Count > 0)
+            {
+                return;
+            }
+
+            (warn, reconnect) = EvaluateStaleness(_lastTopicUpdate, now, _staleWarnThreshold, _staleReconnectThreshold);
+        }
+
+        foreach (var (topic, age) in warn)
+        {
+            logger.LogWarning($"Topic {topic} has not updated in {age.TotalSeconds:F0}s (warn threshold {_staleWarnThreshold.TotalSeconds:F0}s).");
+        }
+
+        if (reconnect.Count == 0 || _forcedReconnectInProgress)
+        {
+            return;
+        }
+
+        var client = _client;
+        if (client == null)
+        {
+            return;
+        }
+
+        _forcedReconnectInProgress = true;
+        var topics = string.Join(", ", reconnect.Select(kv => $"{kv.Key} ({kv.Value.TotalSeconds:F0}s)"));
+        logger.LogWarning($"Topic(s) stale beyond reconnect threshold ({_staleReconnectThreshold.TotalSeconds:F0}s): {topics}. Forcing reconnect.");
+
+        try
+        {
+            // Triggers ClientOnDisconnectedAsync, which reconnects and re-subscribes everything.
+            await client.DisconnectAsync();
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to force reconnect from staleness watchdog");
+            _forcedReconnectInProgress = false;
+        }
+    }
+
+    /// <summary>
+    /// Pure helper: classifies topics by how long since their last update. Returns the
+    /// topics exceeding <paramref name="warnThreshold"/> and those exceeding
+    /// <paramref name="reconnectThreshold"/> (a strict superset of warn is not assumed).
+    /// </summary>
+    internal static (List<KeyValuePair<string, TimeSpan>> warn, List<KeyValuePair<string, TimeSpan>> reconnect) EvaluateStaleness(
+        IReadOnlyDictionary<string, DateTimeOffset> lastUpdate,
+        DateTimeOffset now,
+        TimeSpan warnThreshold,
+        TimeSpan reconnectThreshold)
+    {
+        var warn = new List<KeyValuePair<string, TimeSpan>>();
+        var reconnect = new List<KeyValuePair<string, TimeSpan>>();
+
+        foreach (var (topic, last) in lastUpdate)
+        {
+            var age = now - last;
+            if (age > reconnectThreshold)
+            {
+                reconnect.Add(new KeyValuePair<string, TimeSpan>(topic, age));
+            }
+            else if (age > warnThreshold)
+            {
+                warn.Add(new KeyValuePair<string, TimeSpan>(topic, age));
+            }
+        }
+
+        return (warn, reconnect);
     }
 
     private class Payload

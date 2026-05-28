@@ -9,6 +9,14 @@ like it to be - the WebConnector should be more reliable than the MqttConnector,
 but both are designed to throw exceptions when something goes wrong, instead of trying
 to recover from it - I simply rely on the container to be restarted for now.
 
+The MqttConnector used to suffer from stalled values: the Bayrol server pushes value
+changes but does not reliably keep pushing every topic (redox and production rate in
+particular could go silent), leaving frozen readings. The connector now actively
+re-requests all values on an interval, subscribes with QoS 1, and runs a watchdog that
+logs a warning when a topic goes stale and forces a reconnect (full re-subscribe) if a
+topic stays silent for too long. See the optional `RepollIntervalSeconds`,
+`StaleWarnSeconds` and `StaleReconnectSeconds` config fields below to tune this.
+
 ## Supported Devices
 I've written this for Bayrol's Automatic Salt device, but the WebConnector should be easily adaptable
 to other devices. I don't know if other devices also support MQTT, but if they do we'd probably need
@@ -35,10 +43,18 @@ contains the following fields:
         "05:00:00" : 635,
         "10:00:00" : 625,
         "17:30:00" : 720
-    }  
+    },
+    "RepollIntervalSeconds": 60,
+    "StaleWarnSeconds": 180,
+    "StaleReconnectSeconds": 360
 }
 ```
 UseMqtt = true will use the MqttConnector, otherwise the WebConnector will be used.
+
+`RepollIntervalSeconds`, `StaleWarnSeconds` and `StaleReconnectSeconds` are optional
+(MQTT only) and default to 60 / 180 / 360 seconds respectively. They control how often
+the connector re-requests all values, when it logs a stalled-topic warning, and when it
+forces a reconnect because a topic has stopped updating despite re-polling.
 The WebConnector is probably more reliable, but the MqttConnector gives you more data;
 see [AutomaticSaltDeviceData.cs](BayrolLib/AutomaticSaltDeviceData.cs).
 vs. [ExtendedAutomaticSaltDeviceData.cs](BayrolLib/ExtendedAutomaticSaltDeviceData.cs).
