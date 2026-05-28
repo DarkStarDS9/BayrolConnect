@@ -71,7 +71,11 @@ public static class Program
     private static async Task ConnectUsingMqttAsync(Configuration config)
     {
         var sortedTargetValues = config.RedoxTargetValues?.OrderBy(kv => kv.Key).ToList();
-        var connector = new BayrolMqttConnector(config.User, config.Password, config.Cid, _logger, TimeProvider.System);
+        var connector = new BayrolMqttConnector(
+            config.User, config.Password, config.Cid, _logger, TimeProvider.System,
+            repollInterval: config.RepollIntervalSeconds is { } repoll ? TimeSpan.FromSeconds(repoll) : null,
+            staleWarnThreshold: config.StaleWarnSeconds is { } warn ? TimeSpan.FromSeconds(warn) : null,
+            staleReconnectThreshold: config.StaleReconnectSeconds is { } reconnect ? TimeSpan.FromSeconds(reconnect) : null);
         await connector.ConnectAsync();
 
         var lastState = DeviceState.Offline;
