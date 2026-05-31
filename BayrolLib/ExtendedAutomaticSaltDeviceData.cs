@@ -46,6 +46,22 @@ public class ExtendedAutomaticSaltDeviceData : AutomaticSaltDeviceData
     /// </summary>
     public bool CanisterState { get; set; }
 
+    /// <summary>
+    /// Weighted operating hours counter: cumulative Zeit×% in minutes (topic 4.188).
+    /// Divide by 60 for hours.
+    /// </summary>
+    public int WeightedOpTimeMinutes { get; set; }
+
+    /// <summary>
+    /// Whether a timed SE manual production run is currently active (topic 5.131, v=17).
+    /// </summary>
+    public bool SeManualActive { get; set; }
+
+    /// <summary>
+    /// Remaining runtime of the active manual production run in minutes (topic 4.156).
+    /// </summary>
+    public int SeManualProgressMinutes { get; set; }
+
     public ExtendedAutomaticSaltDeviceData Clone()
         => (ExtendedAutomaticSaltDeviceData)MemberwiseClone();
 }

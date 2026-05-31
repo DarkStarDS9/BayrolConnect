@@ -306,6 +306,15 @@ public class BayrolMqttConnector(
                 case MqttMapping.CanisterState:
                     _deviceData.CanisterState = MqttMapping.ToBool(payload.V);
                     break;
+                case MqttMapping.SeManualActive:
+                    _deviceData.SeManualActive = payload.V.GetInt32() == 17;
+                    break;
+                case MqttMapping.SeManualProgressMin:
+                    _deviceData.SeManualProgressMinutes = payload.V.GetInt32();
+                    break;
+                case MqttMapping.WeightedOpTimeMin:
+                    _deviceData.WeightedOpTimeMinutes = payload.V.GetInt32();
+                    break;
                 default:
                     logger.LogWarning($"Unknown topic {payload.T} with value {payload.V}");
                     break;
@@ -327,6 +336,36 @@ public class BayrolMqttConnector(
         => _client?.PublishStringAsync($"{_prefix}/s/{MqttMapping.RedoxTargetValue}",
                $"{{\"t\":\"{MqttMapping.RedoxTargetValue}\",\"v\":{value},\"min\":400,\"max\":950}}",
                MqttQualityOfServiceLevel.AtLeastOnce) ??
+           Task.CompletedTask;
+
+    /// <summary>
+    /// Starts a timed SE manual production run.
+    /// Sends the 4-step activation sequence: power → runtime → ORP shutoff → start.
+    /// </summary>
+    public async Task StartManualProduction(int powerPct, int runtimeMinutes, int orpShutoffMv)
+    {
+        if (_client == null) return;
+        await Publish("4.149", powerPct);
+        await Publish("4.77", runtimeMinutes);
+        await Publish("4.150", orpShutoffMv);
+        await Publish("5.105", 17);  // 17 = activate
+        logger.LogInformation(
+            "SE manual production scheduled: {Power}% for {Minutes}min, ORP shutoff {Orp}mV",
+            powerPct, runtimeMinutes, orpShutoffMv);
+    }
+
+    /// <summary>
+    /// Stops an active SE manual production run early.
+    /// </summary>
+    public Task StopManualProduction()
+    {
+        logger.LogInformation("SE manual production stopped.");
+        return Publish("5.136", 17);  // 17 = deactivate
+    }
+
+    private Task Publish(string topicId, int value)
+        => _client?.PublishStringAsync($"{_prefix}/s/{topicId}",
+               $"{{\"t\":\"{topicId}\",\"v\":{value}}}") ??
            Task.CompletedTask;
 
     public ExtendedAutomaticSaltDeviceData GetDeviceData()

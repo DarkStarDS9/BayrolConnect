@@ -23,6 +23,13 @@ public static class MqttMapping
     public const string SaltProductionRate = "4.91";
     public const string CanisterState = "5.80";
 
+    // SE manual mode status (subscribe)
+    public const string SeManualActive = "5.131";
+    public const string SeManualProgressMin = "4.156";
+
+    // Weighted operating hours — Zeit × % in minutes (subscribe)
+    public const string WeightedOpTimeMin = "4.188";
+
     public static readonly string[] AllTopics;
 
     static MqttMapping()
@@ -30,7 +37,7 @@ public static class MqttMapping
         // set AllTopics using reflection
         AllTopics = typeof(MqttMapping).GetFields()
             .Where(f => f.FieldType == typeof(string))
-            .Select(f => (string)f.GetValue(null))
+            .Select(f => (string)f.GetValue(null)!)
             .ToArray();
     }
 

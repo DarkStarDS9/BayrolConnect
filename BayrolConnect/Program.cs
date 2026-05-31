@@ -1,5 +1,7 @@
 ﻿using System.Text.Json;
 using BayrolLib;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Prometheus;
 
@@ -8,11 +10,12 @@ namespace BayrolConnect;
 public static class Program
 {
     private static ILogger _logger = null!;
-    
+    private static BayrolMqttConnector? _mqttConnector;
+
     public static async Task Main(string[] args)
     {
         var configJson = args.Length == 1 ? args[0] : Environment.GetEnvironmentVariable("CONFIG");
-       
+
         if(string.IsNullOrEmpty(configJson))
         {
             throw new InvalidOperationException("Configuration not provided");
@@ -29,13 +32,35 @@ public static class Program
                     options.TimestampFormat = "[yyyy-MM-dd HH:mm:ss.fff] ";
                 })
                 .SetMinimumLevel(config.LogLevel));
-        
+
         _logger = config.UseMqtt
             ? loggerBuilder.CreateLogger<BayrolMqttConnector>()
             : loggerBuilder.CreateLogger<BayrolWebConnector>();
 
-        var server = new KestrelMetricServer(port: 8080);
-        server.Start();
+        // Start HTTP server: Prometheus metrics + production control API on port 8080
+        var webBuilder = WebApplication.CreateBuilder(new[] { "--urls", "http://0.0.0.0:8080" });
+        webBuilder.Logging.ClearProviders();  // suppress ASP.NET Core startup noise
+        var webApp = webBuilder.Build();
+
+        webApp.MapMetrics();  // Prometheus at /metrics
+
+        webApp.MapPost("/api/production/start", async (ProductionStartRequest req) =>
+        {
+            if (_mqttConnector == null)
+                return Results.Problem("MQTT connector not initialized", statusCode: 503);
+            await _mqttConnector.StartManualProduction(req.PowerPct, req.RuntimeMinutes, req.OrpShutoffMv);
+            return Results.Ok(new { scheduled = true, req.PowerPct, req.RuntimeMinutes, req.OrpShutoffMv });
+        });
+
+        webApp.MapDelete("/api/production", async () =>
+        {
+            if (_mqttConnector == null)
+                return Results.Problem("MQTT connector not initialized", statusCode: 503);
+            await _mqttConnector.StopManualProduction();
+            return Results.Ok(new { stopped = true });
+        });
+
+        await webApp.StartAsync();
 
         if (config.UseMqtt)
         {
@@ -76,6 +101,7 @@ public static class Program
             repollInterval: config.RepollIntervalSeconds is { } repoll ? TimeSpan.FromSeconds(repoll) : null,
             staleWarnThreshold: config.StaleWarnSeconds is { } warn ? TimeSpan.FromSeconds(warn) : null,
             staleReconnectThreshold: config.StaleReconnectSeconds is { } reconnect ? TimeSpan.FromSeconds(reconnect) : null);
+        _mqttConnector = connector;
         await connector.ConnectAsync();
 
         var lastState = DeviceState.Offline;
@@ -149,6 +175,9 @@ public static class Program
             Metrics.PhDosingRate.Set(extendedData.PhDosingRate);
             Metrics.SaltProductionRate.Set(extendedData.SaltProductionRate);
             Metrics.CanisterState.Set(extendedData.CanisterState ? 1 : 0);
+            Metrics.WeightedOpTimeHours.Set(extendedData.WeightedOpTimeMinutes / 60.0);
+            Metrics.SeManualActive.Set(extendedData.SeManualActive ? 1 : 0);
+            Metrics.SeManualProgressMinutes.Set(extendedData.SeManualProgressMinutes);
         }
     }
 
@@ -183,5 +212,7 @@ public static class Program
         var minutes = now.Minute % 5;
         var secondsToNextInterval = (5 - minutes) * 60 - now.Second;
         return TimeSpan.FromSeconds(secondsToNextInterval);
-    }    
+    }
 }
+
+record ProductionStartRequest(int PowerPct, int RuntimeMinutes, int OrpShutoffMv);

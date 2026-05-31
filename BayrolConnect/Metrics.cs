@@ -42,4 +42,13 @@ public static class Metrics
 
     public static readonly Gauge CanisterState = Prometheus.Metrics
         .CreateGauge("bayrol_canister_state", "Canister state (0=ok, 1=empty)");
+
+    public static readonly Gauge WeightedOpTimeHours = Prometheus.Metrics
+        .CreateGauge("bayrol_weighted_op_time_hours", "Cumulative weighted operating hours (Zeit × %) for electrode wear tracking");
+
+    public static readonly Gauge SeManualActive = Prometheus.Metrics
+        .CreateGauge("bayrol_se_manual_active", "SE timed manual production run active (0=off, 1=on)");
+
+    public static readonly Gauge SeManualProgressMinutes = Prometheus.Metrics
+        .CreateGauge("bayrol_se_manual_progress_minutes", "Remaining runtime of active SE manual production run in minutes");
 }
