@@ -23,6 +23,16 @@ public static class MqttMapping
     public const string SaltProductionRate = "4.91";
     public const string CanisterState = "5.80";
 
+    // SE manual mode control (SET — also echo-subscribed to confirm before start)
+    public const string SeManualPowerPct = "4.149";
+    public const string SeManualRuntime = "4.77";
+    public const string SeManualOrpShutoff = "4.150";
+
+    // SE manual mode function calls (13.x namespace, v=1 to trigger — write-only, no subscribe)
+    public const string SeManualStart = "13.67";
+    // SE manual mode stop (5.x enum, "19.18" = deactivate — write-only, no subscribe)
+    public const string SeManualStop = "5.136";
+
     // SE manual mode status (subscribe)
     public const string SeManualActive = "5.131";
     public const string SeManualProgressMin = "4.156";
@@ -30,14 +40,26 @@ public static class MqttMapping
     // Weighted operating hours — Zeit × % in minutes (subscribe)
     public const string WeightedOpTimeMin = "4.188";
 
+    // Topics subscribed for SE manual echo-wait only — device does NOT publish these
+    // proactively, so they must NOT go into _uninitializedTopics.
+    public static readonly string[] ControlEchoTopics =
+    [
+        SeManualPowerPct,
+        SeManualRuntime,
+        SeManualOrpShutoff,
+    ];
+
+    // Topics the device publishes proactively — used for subscription + init tracking.
+    // Control/function topics (4.149, 4.77, 4.150, 13.67) are intentionally excluded.
     public static readonly string[] AllTopics;
 
     static MqttMapping()
     {
-        // set AllTopics using reflection
+        var controlTopics = new HashSet<string>(ControlEchoTopics) { SeManualStart, SeManualStop };
         AllTopics = typeof(MqttMapping).GetFields()
             .Where(f => f.FieldType == typeof(string))
             .Select(f => (string)f.GetValue(null)!)
+            .Where(t => !controlTopics.Contains(t))
             .ToArray();
     }
 

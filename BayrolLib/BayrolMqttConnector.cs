@@ -74,6 +74,9 @@ public class BayrolMqttConnector(
     private bool _backgroundTasksStarted;
     private volatile bool _forcedReconnectInProgress;
 
+    // Pending echo completions for StartManualProduction — guarded by _deviceData lock
+    private readonly Dictionary<string, TaskCompletionSource<int>> _pendingEchos = new();
+
     private static ILogger SubscribeToMqttNetLogs(ILogger loggerInstance)
     {
         lock (_logSubscriptionLock)
@@ -163,6 +166,16 @@ public class BayrolMqttConnector(
             }
 
             logger.LogInformation($"Subscribed to {subscribeResult.Items.First().TopicFilter.Topic}: {subscribeResult.ReasonString}");
+        }
+
+        // Subscribe to control echo topics (4.149, 4.77, 4.150) so StartManualProduction
+        // can wait for the device to confirm parameter SETs. These are NOT added to
+        // _uninitializedTopics because the device never publishes them proactively.
+        foreach (var topic in MqttMapping.ControlEchoTopics)
+        {
+            var fullTopic = $"{_prefix}/v/{topic}";
+            await _client.SubscribeAsync(fullTopic, MqttQualityOfServiceLevel.AtLeastOnce);
+            logger.LogInformation($"Subscribed to {fullTopic} (control echo)");
         }
 
         // Request the current value of every topic now, then keep re-requesting on a timer.
@@ -306,8 +319,13 @@ public class BayrolMqttConnector(
                 case MqttMapping.CanisterState:
                     _deviceData.CanisterState = MqttMapping.ToBool(payload.V);
                     break;
+                case MqttMapping.SeManualPowerPct:
+                case MqttMapping.SeManualRuntime:
+                case MqttMapping.SeManualOrpShutoff:
+                    // control parameter echoed back by device — used only for echo confirmation
+                    break;
                 case MqttMapping.SeManualActive:
-                    _deviceData.SeManualActive = payload.V.GetInt32() == 17;
+                    _deviceData.SeManualActive = MqttMapping.ToBool(payload.V);
                     break;
                 case MqttMapping.SeManualProgressMin:
                     _deviceData.SeManualProgressMinutes = payload.V.GetInt32();
@@ -318,6 +336,13 @@ public class BayrolMqttConnector(
                 default:
                     logger.LogWarning($"Unknown topic {payload.T} with value {payload.V}");
                     break;
+            }
+
+            // Complete any pending echo waiter for this topic
+            if (_pendingEchos.TryGetValue(topicId, out var echoTcs))
+            {
+                _pendingEchos.Remove(topicId);
+                echoTcs.TrySetResult(payload.V.GetInt32());
             }
 
             _deviceData.ObtainedAt = timeProvider.GetUtcNow();
@@ -345,13 +370,36 @@ public class BayrolMqttConnector(
     public async Task StartManualProduction(int powerPct, int runtimeMinutes, int orpShutoffMv)
     {
         if (_client == null) return;
-        await Publish("4.149", powerPct);
-        await Publish("4.77", runtimeMinutes);
-        await Publish("4.150", orpShutoffMv);
-        await Publish("5.105", 17);  // 17 = activate
+
+        // The PoolAccess UI waits for the device to echo back runtime and ORP shutoff
+        // before sending the start command. Register TCS listeners before sending SETs
+        // so we cannot miss the echo.
+        var runtimeEcho = RegisterEcho(MqttMapping.SeManualRuntime);
+        var shutoffEcho = RegisterEcho(MqttMapping.SeManualOrpShutoff);
+
+        await Publish(MqttMapping.SeManualPowerPct, powerPct);
+        await Publish(MqttMapping.SeManualRuntime, runtimeMinutes);
+        await Publish(MqttMapping.SeManualOrpShutoff, orpShutoffMv);
+
+        // Wait for device confirmation of both critical parameters (timeout 10s)
+        await Task.WhenAll(
+            runtimeEcho.WaitAsync(TimeSpan.FromSeconds(10)),
+            shutoffEcho.WaitAsync(TimeSpan.FromSeconds(10)));
+
+        await Publish(MqttMapping.SeManualStart, 1);  // function call to start SE manual mode
         logger.LogInformation(
-            "SE manual production scheduled: {Power}% for {Minutes}min, ORP shutoff {Orp}mV",
+            "SE manual production started: {Power}% for {Minutes}min, ORP shutoff {Orp}mV",
             powerPct, runtimeMinutes, orpShutoffMv);
+    }
+
+    private Task<int> RegisterEcho(string topicId)
+    {
+        var tcs = new TaskCompletionSource<int>();
+        lock (_deviceData)
+        {
+            _pendingEchos[topicId] = tcs;
+        }
+        return tcs.Task;
     }
 
     /// <summary>
@@ -360,12 +408,19 @@ public class BayrolMqttConnector(
     public Task StopManualProduction()
     {
         logger.LogInformation("SE manual production stopped.");
-        return Publish("5.136", 17);  // 17 = deactivate
+        return PublishEnum(MqttMapping.SeManualStop, 18);  // "19.18" = deactivate
     }
 
+    // Publish a plain integer value (numeric 4.x topics and function call 13.x topics).
     private Task Publish(string topicId, int value)
         => _client?.PublishStringAsync($"{_prefix}/s/{topicId}",
                $"{{\"t\":\"{topicId}\",\"v\":{value}}}") ??
+           Task.CompletedTask;
+
+    // Publish an enum value using the "19.XX" compound string format (5.x topics).
+    private Task PublishEnum(string topicId, int value)
+        => _client?.PublishStringAsync($"{_prefix}/s/{topicId}",
+               $"{{\"t\":\"{topicId}\",\"v\":\"19.{value}\"}}") ??
            Task.CompletedTask;
 
     public ExtendedAutomaticSaltDeviceData GetDeviceData()
