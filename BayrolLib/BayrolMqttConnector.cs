@@ -222,29 +222,24 @@ public class BayrolMqttConnector(
             _deviceData.ObtainedAt = timeProvider.GetUtcNow();
         }
         
-        _reconnectAttempts++;
-        // Implement exponential backoff for reconnection attempts.
-        // Delay = InitialDelay * 2^(Attempts-1), capped at MaxDelay.
-        var delaySeconds = _initialReconnectDelay.TotalSeconds * Math.Pow(2, _reconnectAttempts - 1);
-        var reconnectDelay = TimeSpan.FromSeconds(Math.Min(delaySeconds, _maxReconnectDelay.TotalSeconds));
-
-        logger.LogInformation($"Reconnect attempt {_reconnectAttempts}. Waiting for {reconnectDelay.TotalSeconds} seconds before trying again.");
-        await Task.Delay(reconnectDelay);
-
-        try
+        while (true)
         {
-            // ConnectAsync will reset _reconnectAttempts on successful connection.
-            await ConnectAsync();
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, $"Failed to reconnect after {_reconnectAttempts} attempts. Will retry after next calculated delay from ClientOnDisconnectedAsync if another disconnect event occurs, or if this was the initial connect, the application might terminate.");
-            // If ConnectAsync fails, it throws an exception.
-            // The MqttClient's DisconnectedAsync event might be triggered again by the library if the failed ConnectAsync attempt itself causes a disconnect state.
-            // Or, if ConnectAsync fails and the client remains in a disconnected state without triggering DisconnectedAsync again,
-            // we might not automatically retry from here. However, the MQTTnet client itself might have internal retry mechanisms
-            // for the initial connection attempt. Given our loop, if ConnectAsync fails, ClientOnDisconnectedAsync will be called again
-            // by the MQTT library when it fully registers the disconnection after a failed connect.
+            _reconnectAttempts++;
+            var delaySeconds = _initialReconnectDelay.TotalSeconds * Math.Pow(2, _reconnectAttempts - 1);
+            var reconnectDelay = TimeSpan.FromSeconds(Math.Min(delaySeconds, _maxReconnectDelay.TotalSeconds));
+
+            logger.LogInformation($"Reconnect attempt {_reconnectAttempts}. Waiting for {reconnectDelay.TotalSeconds} seconds before trying again.");
+            await Task.Delay(reconnectDelay);
+
+            try
+            {
+                await ConnectAsync();
+                return;
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, $"Reconnect attempt {_reconnectAttempts} failed. Retrying with backoff...");
+            }
         }
     }
 

@@ -117,6 +117,8 @@ public static class Program
                 values = connector.GetDeviceData();
             } while (isInStartup && values.DeviceState == DeviceState.Offline && await StartupRetryDelayAsync());
 
+            isInStartup = false;
+
             if(values.DeviceState != lastState)
             {
                 _logger.LogInformation($"Device state changed: {values.DeviceState}");
